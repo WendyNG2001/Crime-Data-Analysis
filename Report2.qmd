@@ -1,0 +1,700 @@
+---
+title: "Analysisng data"
+format: pdf
+editor: visual
+---
+
+```{r}
+#| warning: false
+#| message: false 
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(scales)
+library(tidyselect)
+library(reshape2)
+library(vip)
+library(factoextra)
+
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+crime_data<- read.csv("data/South Africa crime data.csv")
+col_names <- colnames(crime_data)
+year_cols <- grep("^X\\d{4}\\.\\d{4}$", col_names)
+for (col in year_cols) {
+  year <- sub("^X(\\d{4})\\.\\d{4}$", "\\1", col_names[col])
+  colnames(crime_data)[col] <- year
+}
+```
+
+# 1. Introduction
+
+### 1.1. Background on crime in South Africa
+
+Over the past few years (2010-2014) the crime rates in South Africa have increased drastically. Over the examined period, South Africa has struggled with significant challenges regarding crime rates, with Gauteng consistently emerging as a focal point due to its persistently high levels of criminal activity. According to the provided data, despite fluctuations, the overall trend in crime rates has showed resilience, with only minor deviations. In 2005, there were 2,176,557 reported incidents, which gradually declined until 2007, reaching 2,072,449. However, the subsequent years witnessed a slight uptick, peaking in 2014 at 2,206,506 before experiencing a marginal decrease in 2015, settling at 2,182,999 incidents. Notably, Gauteng, as the country's economic hub and most populous province, consistently registered the highest crime rates throughout this period, contributing significantly to the national figures. South Africa faces many crime challenges. Poverty, unemployment, and inequality make communities more prone to crime. Limited law enforcement resources hinder effective crime prevention. Organized crime and corruption also undermine law enforcement. Rapid urbanization and informal settlements provide environments for crime to thrive.
+
+### 1.1. South Africa crime trends
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+#Renaming the columns 
+crime_data_long <- crime_data |>
+  pivot_longer(cols = -c("Province", "Station", "Category"),
+               names_to = "Year", values_to = "Crimes")
+
+
+
+
+crimes_per_year <- crime_data_long |>
+  group_by(Year) |>
+  summarise(total_crimes = sum(Crimes))
+
+
+SaTrends <- crimes_per_year |>
+  select(Year, total_crimes)
+
+# Create a line plot
+ggplot(SaTrends, aes(x = Year, y = total_crimes, group=1)) +
+  geom_line(color = "orange") +
+  labs(title = "South Africa trends in Crimes (2005-2016) ",
+       y = "Total Crimes",
+       x = "Year",
+       caption = "Updated: 7 April 2022")
+
+```
+
+### 1.2. Provincial crime trends in South Africa
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+# Group and summarize the data
+crimes_data_longs <- crime_data_long |>
+  group_by(Province, Year) |>
+  summarise(total_crimes = sum(Crimes))
+
+# Plotting with customized axes
+ggplot(crimes_data_longs, aes(x = Province, y = total_crimes, group = 1)) +
+  geom_line(color = "blue") +
+  labs(
+    title = "Crime trends per province (2005-2016)",
+    y = "Total Crimes",
+    x = "Year",
+    caption = "Updated: 7 April 2022"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(limits = c(0, 700000), breaks = seq(0, 700000, by = 50000))
+```
+
+## 
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+unemployment_data<- read.csv("data/Unemployment_rate_by_province.csv")
+# Get the second row of the data frame
+
+new_col_names <- unemployment_data[1, ]
+
+# Assign the values of the second row to the column names starting from the second column
+colnames(unemployment_data)[1:ncol(unemployment_data)] <- new_col_names[1:ncol(unemployment_data)]
+
+# Remove the second row from the data frame
+unemployment_data <- unemployment_data[-1,]
+unemployment_data <- unemployment_data[-1, ] #removing SA record 
+
+# Changing the name of the first column to "Provinces"
+colnames(unemployment_data)[1] <- "Provinces"
+
+unemployment_data <- unemployment_data[, -2] #remo
+
+# Changing the colunm names 
+old_col_names <- colnames(unemployment_data)
+
+# Extract the first month and year from the old column names
+new_col_names <- sub("^(\\w+)-\\w+ (\\d+)$", "\\1 \\2", old_col_names)
+
+# Assign the new column names to the data frame
+colnames(unemployment_data) <- new_col_names
+
+# Remove the text after the dash in the "Provinces" column
+unemployment_data$Provinces <- sub("-.*", "", unemployment_data$Provinces) #removing the writing after the dash so that it is easier to join to the other file
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+unemployment_data_new <- unemployment_data |>
+  pivot_longer(cols = -Provinces,
+               names_to = "Date",
+               values_to = "Unemployment_rate")
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+# Extract the year from the Date column
+unemployment_data_new$Year <- str_extract(unemployment_data_new$Date, "\\d{4}")
+
+# Convert the extracted Year and Unemployment_rate to numeric
+unemployment_data_new$Year <- as.numeric(unemployment_data_new$Year)
+unemployment_data_new$Unemployment_rate <- as.numeric(unemployment_data_new$Unemployment_rate)
+
+# Group by Year and summarise the mean of Unemployment_rate
+result <- unemployment_data_new |>
+  group_by(Year) |>
+  summarise(Mean_Unemployment_Rate = mean(Unemployment_rate))
+
+
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+mean_value <- mean(unemployment_data_new$Unemployment_rate, na.rm = TRUE) # Calculate the mean of the non-empty values
+
+# Replace empty values with the mean
+unemployment_data_new$Unemployment_rate <- ifelse(is.na(unemployment_data_new$Unemployment_rate), mean_value, unemployment_data_new$Unemployment_rate)
+
+
+# Rounding the "Unemployment_rate" column to 1 decimal place
+unemployment_data_new$Unemployment_rate <- round(unemployment_data_new$Unemployment_rate, 1)
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+CPI_data<- read.csv("data/CPI INDEX HISTORY 2.CSV")
+cols_to_keep <- !grepl("X", colnames(CPI_data)) | colnames(CPI_data) == "X"
+CPI<- CPI_data[, cols_to_keep]
+CPI <- rename(CPI, Year = X)
+```
+
+### 1.3. Consumer Price Index South Africa
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+CPI_long <- CPI |>
+  pivot_longer(cols = -Year, names_to = "month", values_to = "CPI_index")
+# Convert the CPI_index to numeric
+CPI_long$CPI_index <- as.numeric(gsub(",", ".", CPI_long$CPI_index))
+
+#filtering out by year
+CPI_new <- CPI_long |>
+  filter(Year >= 2005 & Year <= 2016)
+
+# Assuming 'CPI_filtered' is your data frame
+CPI_new2<- CPI_new |>
+  filter(month != "Average")
+
+#plotting
+ggplot(CPI_new2, aes(x = Year, y = CPI_index)) +
+  geom_line(color = "red") +
+  labs(x = "Year", y = "CPI Index") +
+  theme_minimal() +
+  ggtitle("CPI Index Over the Years") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"),
+        axis.title.x = element_text(face="bold"),
+        axis.title.y = element_text(face="bold"))
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+#converting all the data to annual
+CPI_annual<- CPI_new |>
+  filter(month == "Average") #remove month 
+CPI_annual <- CPI_annual |>
+  select(-month)
+
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+ Unemployment_annual<- unemployment_data_new
+ Unemployment_annual<- rename(Unemployment_annual, Province = Provinces)
+ 
+Unemployment_avg <- Unemployment_annual |>
+  group_by(Province, Year) |>
+  summarise(average_unemployment_rate = mean(Unemployment_rate, na.rm = TRUE))
+```
+
+### 
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+Crime_annual<- crime_data_long
+Crime_totals <- Crime_annual |>
+  group_by(Province, Year) |>
+  summarise(total_crimes = sum(Crimes, na.rm = TRUE))
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+#CPI_annual$Year <- as.numeric(as.character(CPI_annual$Year))
+Crime_totals$Year <- as.numeric(as.character(Crime_totals$Year))
+Unemployment_avg$Year <- as.numeric(as.character(Unemployment_avg$Year))
+
+# Now you can join the data frames
+crime_unemployment_data <- Crime_totals |>
+  inner_join(Unemployment_avg, by = c("Province", "Year"))
+
+SA_crimes<- crime_unemployment_data |>
+  inner_join(CPI_annual, by = "Year")
+
+```
+
+### 1.4. South Africa unemployment rates
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+# Convert Year variable to integer
+Unemployment_annual$Year <- as.integer(Unemployment_annual$Year)
+
+Unemployment_annual <- unemployment_data_new %>%
+  filter(Year >= 2008 & Year <= 2016)
+
+
+# Create the bar graph with filtered years on the x-axis
+ggplot(Unemployment_annual, aes(x = Year, y = Unemployment_rate)) +
+  geom_bar(stat = "identity", fill = "pink", width = 0.7) +
+  labs(title = "South Africa trends in Unemployment Rate (2005-2016)",
+       y = "Unemployment Rate",
+       x = "Year",
+       caption = "Updated: 7 April 2022") +
+  scale_x_continuous(breaks = seq(2008, 2016, by = 1))
+
+```
+
+# 2. Linear Regression
+
+The selection of the CPI index as a predictor variable for crime rates in South Africa was motivated by the CPI index which serves as a representative for the overall economic conditions within the country, comprehensive factors such as inflation, unemployment, and general economic stability. These economic factors have been widely acknowledged as influential determinants of crime rates in various studies. Additionally, our exploratory data analysis (EDA) revealed a noticeable correlation between the CPI index and crime rates, suggesting that changes in economic conditions could potentially impact crime levels. The dates that were in the format X2005.2006 have been converted to years 2005, 2006 etc as it was easier to work with the data.
+
+| Year | Crimes  | CPI Index |
+|------|---------|-----------|
+| 2005 | 2176557 | 41        |
+| 2006 | 2138717 | 42.9      |
+| 2007 | 2072449 | 45.9      |
+| 2008 | 2121884 | 51.2      |
+| 2009 | 2145388 | 54.6      |
+| 2010 | 2091348 | 56.9      |
+| 2011 | 2106560 | 59.8      |
+| 2012 | 2151032 | 63.1      |
+| 2013 | 2204000 | 66.8      |
+| 2014 | 2206506 | 70.8      |
+| 2015 | 2182999 | 74.1      |
+
+: CPI & Crime (2005-2015)
+
+```{r}
+#| label: fig-fulwidth
+#| fig-cap: "caption for graph"
+#| fig-width: 6
+#| fig-height: 4
+#| fig-column: page-right
+#| warning: false
+#| message: false 
+#| echo: false
+
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+
+crime_data_long$Year <- as.numeric(as.character(crime_data_long$Year))
+
+# Sum the crimes per year
+Crimes_linear <- crime_data_long |>
+  group_by(Year) |>
+  summarise(Crimes = sum(Crimes, na.rm = TRUE))
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+# Merge datasets based on the common column 'Year'
+combined_data <- inner_join(Crimes_linear, CPI_annual, by = "Year")
+
+# View the resulting combined dataset
+View(combined_data)
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+fit_sa_crimes <- lm(Crimes ~ CPI_index, data = combined_data)
+fit_sa_crimes
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+combined_data |>
+  ggplot(aes(x = CPI_index, y = Crimes)) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", color = "red") +  # Set intercept to zero
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))
+```
+
+##### CPI index VS Total crimes in South Africa (2005-2016)
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+fit_crime_meanyear <- lm(Crimes ~ CPI_index, data = combined_data)
+
+#scale(carat) is equivalent to carat = carat - mean(carat)
+
+fit_crime_meanyear
+
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+fit_sa_crimes
+```
+
+### 2.1. CPI Index and Crime rates
+
+The linear regression models fitted to the data showed insightful results. The coefficients obtained from the model shows the estimated effect of the CPI index on crime rates. The coefficient for the CPI index suggests that for every unit increase in the CPI index, we expect a corresponding increase of approximately 2052 in the predicted number of crimes, holding other variables constant.
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+#| 
+newdata = data.frame(CPI_index=74)
+
+predict(fit_sa_crimes, newdata)
+```
+
+### **2.3. Summary Statistics and relationships:**
+
+Our EDA involved examining key summary statistics and relationships between variables in the dataset. We observed a positive correlation between the CPI index and crime rates, indicating that as the CPI index increases (reflecting better economic conditions), crime rates tend to decrease, and vice versa.
+
+From the predictions generated by the model, we can conclude that the economic conditions (CPI index) , play a crucial role in influencing crime rates in South Africa. By comparing the predicted crime rates under different CPI index values, we can assess the potential impact of economic changes on crime levels. Such comparisons provide valuable insights for policymakers and stakeholders in formulating strategies to address crime prevention and socio-economic development initiatives.
+
+#### Recommendation
+
+Based on the results of the regression analysis it is recommended that the South African government focus on fostering economic stability through job creation, while simultaneously implementing targeted crime prevention strategies. These should include community policing initiatives and social support programs, particularly during economic downturns. Community engagement and collaboration with stakeholders are also crucial for addressing underlying social inequalities contributing to crime. By adopting these measures, the government can create safer communities and improve socio-economic outcomes for its citizens.
+
+# 3. Classification
+
+```{r}
+#| label: fig-fulwidth
+#| fig-cap: "caption for graph"
+#| fig-width: 6
+#| fig-height: 4
+#| fig-column: page-right
+#| warning: false
+#| message: false 
+#| echo: false
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+
+# Define the breakpoints for the categories
+breakpoints <- quantile(SA_crimes$total_crimes, probs = c(0, .33, .67, 1))
+
+# Create the crime_level variable
+SA_crimes$crime_level <- cut(SA_crimes$total_crimes, 
+                             breaks = breakpoints, 
+                             labels = c("low", "medium", "high"),
+                             include.lowest = TRUE)
+
+```
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+set.seed(123)
+
+# Create data partition
+trainIndex <- createDataPartition(SA_crimes$crime_level, p = 0.7, list = FALSE)
+
+# Split the data into training and testing sets
+trainData <- SA_crimes[trainIndex, ]
+testData <- SA_crimes[-trainIndex, ]
+
+# Ensure the crime_level is a factor
+trainData$crime_level <- factor(trainData$crime_level, levels = c("low", "medium", "high"))
+testData$crime_level <- factor(testData$crime_level, levels = c("low", "medium", "high"))
+
+# Define the tuning grid
+rfGrid <- expand.grid(mtry = c(1, 2))
+
+# Define the control using a cross-validation plan
+fitControl <- trainControl(method = "cv", number = 10)
+
+# Train the model on training data
+model <- train(crime_level ~ average_unemployment_rate + CPI_index, 
+               data = trainData, 
+               method = "rf", 
+               ntree = 1000,
+               trControl = fitControl, 
+               tuneGrid = rfGrid)
+
+model
+```
+
+### 3.1. Cross validation approach
+
+The model was trained using 10-fold cross-validation, a robust method for estimating the performance of a model on unseen data.
+
+Two values of **`mtry`**, which is a tuning parameter for the Random Forest algorithm specifying the number of variables randomly sampled at each split, were considered: 1 and 2. The model’s performance was evaluated using accuracy, a measure of the model’s overall correctness, and Kappa, a measure of the agreement between the model’s predictions and the actual values that takes into account the agreement occurring by chance.
+
+When **`mtry`** was set to 1, the model achieved an accuracy of approximately 35.33% and a Kappa statistic of about 0.03076, suggesting that the model’s performance was not much better than random guessing. However, when **`mtry`** was set to 2, the model’s performance improved significantly, with an accuracy of 50% and a higher Kappa statistic. This suggests that considering two variables at each split leads to better model performance.
+
+The final model was chosen based on the highest accuracy, thus the model with **`mtry`** equal to 2 was selected as the final model. This model provides a moderate baseline for predicting crime levels based on the given predictors, but further refinement and evaluation would be beneficial to increase its predictive power.
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+
+# Make predictions
+predictions <- predict(model, newdata = testData)
+
+# Evaluate the model
+confusionMatrix(predictions, testData$crime_level)
+
+# Print the summary of the model
+model
+
+```
+
+### 3.2. A Confusion Matrix Analysis
+
+The Random Forest model was trained on a dataset of 41 samples with 2 predictors to predict crime levels categorized as ‘low’, ‘medium’, and ‘high’. The model’s performance was evaluated using a confusion matrix and various statistical measures. The confusion matrix revealed that the model correctly predicted ‘low’ crime level 3 times, ‘medium’ level 4 times, and ‘high’ level 3 times. However, there were instances where the model incorrectly predicted the crime level. The overall accuracy of the model was approximately 66.67%, indicating that the model correctly predicted the crime level about two-thirds of the time. The Kappa statistic, a measure of the agreement between the model’s predictions and the actual values, was 0.5, suggesting a moderate level of agreement.
+
+The model demonstrated varying levels of sensitivity and specificity across the different crime levels. For instance, it showed a higher ability to correctly identify ‘medium’ and ‘high’ crime levels compared to ‘low’ levels. This could be particularly useful if the focus is on predicting higher crime levels, which might be areas of greater concern and where intervention could be most needed.
+
+The model provides a moderate baseline for predicting crime levels based on the given predictors, but further refinement and evaluation would be beneficial to increase its predictive power.
+
+#### Recommendations
+
+The relationship between crime rates, the Consumer Price Index (CPI), and unemployment rates is complex. Economic theory suggests that as CPI and unemployment rates increase, crime rates may also rise. This is because higher CPI can lead to increased cost of living, potentially leading to economic stress and higher crime rates. Similarly, higher unemployment rates mean more people are without jobs, which could increase the likelihood of criminal activity as a means of financial survival. The model uses the annual CPI index and unemployment to predict whether crime will be low, medium or high in each province across South Africa. These variables were chosen because we want to see which province will likely have more crime rates as a result of economic instability.
+
+Based on the data analysis and predictive modelling performed, it's observed that crime rates vary across different provinces in South Africa and are influenced by economic factors such as the Consumer Price Index (CPI). The model suggests a relationship between the Consumer Price Index (CPI) and crime rates. This could indicate that economic factors play a role in crime. Therefore, policies aimed at economic stability and reducing inflation might help in reducing crime rates. The government should invest in data collection and analysis to inform policy decisions.
+
+# 4. Clustering
+
+```{r}
+#| label: fig-fulwidth
+#| fig-cap: "caption for graph"
+#| fig-width: 6
+#| fig-height: 4
+#| fig-column: page-right
+#| warning: false
+#| message: false 
+#| echo: false
+```
+
+### 4.1. Cluster 1 Code based on Unknown description of crimes
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+Unknown_Theft <- crime_data |> 
+  filter(Category== "All theft not mentioned elsewhere") 
+
+Unknown_Theft<- Unknown_Theft |> 
+  select(-Category, -Station, -Province)
+
+Unknown_Theft <- as.data.frame(Unknown_Theft)
+
+
+Unknown_Theft <- scale(Unknown_Theft)
+
+factoextra:: fviz_nbclust(x= Unknown_Theft, kmeans, method= c("silhouette"))
+
+set.seed(45) 
+
+kmeans_model <- kmeans(x = Unknown_Theft, centers = 3, iter.max = 10, nstart = 25)
+
+
+aggregate(Unknown_Theft, by=list(cluster=kmeans_model$cluster), mean) #getting the mean of each variable by cluster
+
+Unknown_Theft2 <- cbind(Unknown_Theft, cluster = kmeans_model$cluster)
+
+Unknown_Theft2 <- as.data.frame(Unknown_Theft2) 
+
+#Visualise Cluster 1
+fviz_cluster(kmeans_model, Unknown_Theft2, 
+                  ellipse.type = "convex",
+                  geom=c("point"), 
+                  palette = "jco", 
+                  ggtheme = theme_classic()) +
+  scale_y_continuous(breaks = seq(-6, 3, by = 3))
+
+#Convert Cluster model to tibble 
+Unknown_Theft2 |>
+  mutate(Cluster= kmeans_model$cluster) |> 
+  group_by(Cluster) |> 
+  summarise_all("mean")
+```
+
+#### 4.1.1. Visualizing Trends in Unidentified Crimes Across South Africa (2006-2015)
+
+For the first Visualisation, our decision was to visually represent the category pertaining to unidentified crimes in South Africa spanning from 2006 to 2015. We opted for this particular category to facilitate comprehension of unidentified crimes across the nation. Through the visualization of this data, we aim to compare unidentified crimes to known crime types, thereby discovering any correlations between them.
+
+The results of this code produced three distinct clusters, each characterized by the average count of unknown crimes within the dataset. In the first cluster, the averages manifest as negative values, showcasing a gradual decrease over successive years. Notably, 2014 registers the lowest average count within this cluster. Conversely, the second cluster demonstrates consistently high average counts of crimes across all years, with a marginal upward trajectory over time. Remarkably, the second cluster boasts the highest average count of crimes among the three clusters, with the year 2011 recording the apex in terms of the average count of unknown crimes. Lastly, the averages within the third cluster display positive values, indicative of a prevailing upward trend over the examined years.
+
+#### Recommendation
+
+Based off of the high numbers in unknown crimes in South Africa from 2006 to 2015 the Government should consider investing in technology integration and data sharing.An investment in technological solutions for crime data analysis and information sharing among law enforcement departments will enhance coordination and response effectiveness.The government should also explore partnerships with private sector entities for innovative crime-fighting technologies and tools. These investments will decrease the number of unknown crimes and track the reporting of crimes faster than the rate in the years provided.
+
+### 4.2. Cluster 2 based on Gauteng Crime Stats
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+Province <- crime_data |> 
+  filter(Province== "Gauteng")
+
+Province <- Province |> 
+  select(-Category, -Station, -Province)
+
+Province <- as.data.frame(Province)
+
+Province <- scale(Province)
+
+factoextra:: fviz_nbclust(x= Province, kmeans, method= c("silhouette"))
+
+set.seed(45) 
+
+kmeans_model <- kmeans(x = Province, centers = 3, iter.max = 10, nstart = 25)
+
+aggregate(Province, by=list(cluster=kmeans_model$cluster), mean) #getting the mean of each variable by cluster
+
+Province2 <- cbind(Province, cluster = kmeans_model$cluster)
+
+Province2 <- as.data.frame(Province2)
+
+# Visualise CLuster 2
+fviz_cluster(kmeans_model, Province2, 
+                  ellipse.type = "convex",
+                  geom=c("point"), 
+                  palette = "jco", 
+                  ggtheme = theme_classic()) +
+  scale_y_continuous(breaks = seq(-6, 3, by = 3))
+
+
+#Convert Cluster model to tibble 
+Province2 |>
+  mutate(Cluster= kmeans_model$cluster) |> 
+  group_by(Cluster) |> 
+  summarise_all("mean")
+```
+
+#### 4.1.2. Analyzing Crime Trends in Gauteng Province (2006-2015)
+
+The second visualization illustrates all the crimes that occurred in Gauteng between 2006 and 2015. We selected this province because it consistently recorded the highest levels of crime in South Africa during the specified time frame. Our goal in visualising this data is to ascertain the average number of crimes reported in the province over the identified period.
+
+This code generated three distinct clusters, each characterized by the average count of crimes in Gauteng within the dataset. Within the first cluster, the average crime rates are notably high and exhibit minimal fluctuation over the years, suggesting a consistently high and stable crime rate. The year 2011 stands out with the highest average of crimes within this cluster. In contrast, the second cluster displays a moderate and relatively steady crime rate across all years, with a slight uptick noted towards the later years, indicating a group of crimes with moderate and stable values that may be gradually increasing. Lastly, the third cluster shows negative crime averages with slight fluctuations over the years, suggesting crime averages with negative values that fluctuate slightly over time.
+
+#### Recommendation
+
+As a result of Gauteng having the highest crime rate of all the provinces in the country, the Government needs to apply a targeted deployment of law enforcement approach. The government should deploy law enforcement resources strategically, prioritising areas in the Gauteng province, as it has a high likelihood of criminal activity. They shold also implement hotspot policing strategies to increase visibility and deterrence in crime-prone locations.
+
+### 4.3. Cluster 3 based on Coastal Regions Crime stats
+
+```{r}
+#| warning: false
+#| message: false 
+#| echo: false
+Coast <- crime_data |> 
+  filter(Province== "Kwazulu/Natal" | Province == "Western Cape" )
+
+Coast <- Coast |> 
+  select(-Category, -Station, -Province)
+
+Coast <- as.data.frame(Coast)
+
+Coast <- scale(Coast)
+
+factoextra:: fviz_nbclust(x= Coast, kmeans, method= c("silhouette"))
+
+set.seed(45) 
+
+kmeans_model <- kmeans(x = Coast, centers = 3, iter.max = 10, nstart = 25)
+
+aggregate(Coast, by=list(cluster=kmeans_model$cluster), mean) #getting the mean of each variable by cluster
+
+Coast2 <- cbind(Coast, cluster = kmeans_model$cluster)
+
+Coast2 <- as.data.frame(Coast2)
+
+# Visualise CLuster 3
+fviz_cluster(kmeans_model, Coast2, 
+                  ellipse.type = "convex",
+                  geom=c("point"), 
+                  palette = "jco", 
+                  ggtheme = theme_classic()) +
+  scale_y_continuous(breaks = seq(-6, 3, by = 3))
+
+#Convert Cluster model to tibble 
+Coast2 |>
+  mutate(Cluster= kmeans_model$cluster) |> 
+  group_by(Cluster) |> 
+  summarise_all("mean")
+```
+
+#### 4.1.3. Analyzing Crime Trends in Coastal Regions (2006-2015)
+
+The third visualization demonstrates all the crimes that occurred in the coastal areas, including Western Cape, and Kwa-Zulu Natal between 2006 and 2015. We selected these provinces to compare the crime rate in the coastal areas compared to the crime rate inland, Gauteng. Our goal in visualising this data is to ascertain the average number of crimes reported in the coastal regions over the identified period.
+
+The code produced three distinct clusters, each characterized by the average count of crimes in Western Cape and Kwa-Zulu Natal combined. Within the first cluster, relatively high and appear to exhibit a steady increase over the years. This suggests that the cluster represents a consistently high crime rate that is gradually increasing. The year 2011 stands out with the highest average of crimes within this cluster. The second cluster displays a moderate and relatively stable crime rate across all years. There seems to be a slight fluctuation in crime averages, but overall stability is observed. This implies that the cluster represents average crime with moderate and stable values.   Lastly, the third cluster shows negative crime averages with slight fluctuations over the years, suggesting crime averages with negative values that fluctuate slightly over time.
+
+#### Recommendation
+
+The Government can prioritse investing in crime prevention programs in the coastal areas to maintain a lower crime rate relative to over provinces in the country and even lower the crime in these provinces. This includes allocating funding for evidence-based crime prevention programs, such as youth mentorship initiatives and substance abuse prevention efforts. The government can collaborate with local organizations and stakeholders to implement holistic approaches addressing underlying social factors contributing to crime.
